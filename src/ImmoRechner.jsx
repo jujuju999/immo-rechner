@@ -103,6 +103,7 @@ export default function ImmoRechner() {
   const [steuersatz, setSteuersatz] = useState(30);
   const [gebaeude, setGebaeude] = useState(80);
   const [afaSatz, setAfaSatz] = useState(2);
+  const [zeigErklaerung, setZeigErklaerung] = useState(false);
 
   const r = useMemo(() => {
     const neben = kaufpreis * (nebenPct / 100);
@@ -167,6 +168,48 @@ export default function ImmoRechner() {
     };
   }, [kaufpreis, nebenPct, ek, zins, tilgung, miete, kosten, wertPct, halte, steuersatz, gebaeude, afaSatz]);
 
+  // Erklärung in Worten – liest die aktuell berechneten Werte und erzählt sie nach.
+  const erklaerung = useMemo(() => {
+    const cfMon = r.cashflowMon;
+    const cfNach = r.cashflowNachSteuerMon;
+    const spart = r.steuerJ1 < 0;
+    const hebelGut = r.ekRendite >= r.objektRendite;
+    const items = [];
+
+    items.push({
+      h: "Was du kaufst",
+      t: `Bei einem Kaufpreis von ${euro(kaufpreis)} zahlst du inklusive ${pct(nebenPct)} Kaufnebenkosten (${euro(r.neben)}) insgesamt ${euro(r.gesamt)}. Davon bringst du ${euro(ek)} Eigenkapital selbst mit, die übrigen ${euro(r.darlehen)} finanzierst du über einen Kredit.`,
+    });
+
+    items.push({
+      h: "Was die Wohnung abwirft",
+      t: `Die Kaltmiete bringt ${euro(miete * 12)} im Jahr – das sind ${pct(r.brutto)} Bruttomietrendite auf den Kaufpreis. Nach laufenden Kosten und bezogen auf die Gesamtinvestition inkl. Nebenkosten bleiben ${pct(r.netto)} Nettomietrendite.`,
+    });
+
+    const cfSatz =
+      cfMon >= 0
+        ? `Nach Kreditrate und Kosten bleiben dir vor Steuer rund ${euro(cfMon)} pro Monat übrig.`
+        : `Nach Kreditrate und Kosten musst du vor Steuer jeden Monat rund ${euro(Math.abs(cfMon))} draufzahlen.`;
+    const steuerSatz = spart
+      ? `Die Steuer hilft dir hier: durch AfA (${euro(r.afaJahr)}/Jahr) und absetzbare Zinsen entsteht auf dem Papier ein Verlust, der dir ${euro(Math.abs(r.steuerJ1))} im Jahr zurückbringt. Damit liegt der Cashflow nach Steuer bei ${euro(cfNach)} pro Monat.`
+      : `Auf den steuerlichen Überschuss zahlst du ${euro(r.steuerJ1)} Steuern im Jahr, wodurch der Cashflow nach Steuer bei ${euro(cfNach)} pro Monat liegt.`;
+    items.push({ h: "Was am Monatsende übrig ist", t: `${cfSatz} ${steuerSatz}` });
+
+    items.push({
+      h: "Der Hebel",
+      t: hebelGut
+        ? `Deine Objektrendite (${pct(r.objektRendite)}) liegt über den Finanzierungskosten, dadurch hebelt der Kredit deine Eigenkapitalrendite auf ${pct(r.ekRendite)} nach oben – mehr, als wenn du alles bar bezahlt hättest.`
+        : `Deine Objektrendite (${pct(r.objektRendite)}) liegt unter den Finanzierungskosten. Der Kredit arbeitet dadurch gegen dich und drückt die Eigenkapitalrendite auf ${pct(r.ekRendite)}.`,
+    });
+
+    items.push({
+      h: `Vermögen nach ${halte} Jahren`,
+      t: `Aus ${euro(ek)} Eigenkapital wird ein Endvermögen von ${euro(r.endvermoegen)} – ein Gewinn von ${euro(r.gewinn)} bzw. ${pct(r.renditePa)} pro Jahr. Er speist sich aus Wertsteigerung (${euro(r.wertzuwachs)}) und Schuldenabbau durch Tilgung (${euro(r.schuldenAbbau)}); Cashflow (${euro(r.kumCF)}) und die einmaligen Nebenkosten (−${euro(r.neben)}) rechnest du gegen.${halte >= 10 ? " Nach 10 Jahren ist ein Verkaufsgewinn zudem steuerfrei." : ` Noch ${10 - halte} Jahre, dann wäre ein Verkaufsgewinn steuerfrei.`}`,
+    });
+
+    return items;
+  }, [r, kaufpreis, nebenPct, ek, miete, halte]);
+
   const cfGood = r.cashflowMon >= 0;
   const cfnGood = r.cashflowNachSteuerMon >= 0;
   const hebelGood = r.ekRendite >= r.objektRendite;
@@ -184,7 +227,33 @@ export default function ImmoRechner() {
           Zieh an den Reglern. Achte besonders auf <b>Cashflow nach Steuer</b> – die AfA senkt
           deine Steuer, obwohl kein Geld abfließt.
         </p>
+        <button
+          type="button"
+          onClick={() => setZeigErklaerung((v) => !v)}
+          style={{
+            marginTop: 10, cursor: "pointer",
+            background: zeigErklaerung ? C.panel : C.emerald,
+            color: zeigErklaerung ? C.emerald : "#fff",
+            border: `1px solid ${C.emerald}`, borderRadius: 8,
+            padding: "8px 14px", fontSize: 13, fontWeight: 700,
+          }}
+        >
+          {zeigErklaerung ? "Erklärung ausblenden" : "Erklär mir das Ergebnis"}
+        </button>
       </div>
+
+      {zeigErklaerung && (
+        <div style={{ background: C.emeraldSoft, border: `1px solid ${C.line}`, borderRadius: 12, padding: 18, marginBottom: 20 }}>
+          <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 4 }}>Dein Ergebnis in Worten</div>
+          <div style={{ fontSize: 11, color: C.sub, marginBottom: 12 }}>Aktualisiert sich live, wenn du an den Reglern ziehst.</div>
+          {erklaerung.map((e) => (
+            <div key={e.h} style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.emerald, marginBottom: 2 }}>{e.h}</div>
+              <div style={{ fontSize: 13, color: C.ink, lineHeight: 1.55 }}>{e.t}</div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="grid md:grid-cols-2 gap-6">
         {/* INPUTS */}
